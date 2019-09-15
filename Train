@@ -1,0 +1,224 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# Подключаем все необходимое и читаем файл
+
+# In[1]:
+
+
+from pandas import read_csv, DataFrame, read_excel
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import roc_curve
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, ExtraTreesClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.decomposition import PCA
+from sklearn.metrics import roc_auc_score, roc_curve, accuracy_score, classification_report
+import matplotlib.pyplot as plt
+import numpy as np
+
+from sklearn.preprocessing import LabelEncoder
+dataset = read_csv('Var_1.csv',';')
+
+
+# Узнаем названия столбцов
+
+# In[2]:
+
+
+dataset.columns
+
+
+# Чистим данные от некорректных возрастов (оставляем значения только больше 18 и меньше 100)
+
+# In[3]:
+
+
+dataset_first = dataset[(dataset[dataset.columns[2]] > 18)& (dataset[dataset.columns[2]] < 100)]
+
+
+# В столбцах "Пол" и "Семейное положение" есть поля с отсутствующими значениями. Исключаем данные строки.
+
+# In[4]:
+
+
+dataset_second = dataset_first[~dataset_first[dataset_first.columns[5]].isna()]
+dataset_third = dataset_second[~dataset_second[dataset_second.columns[1]].isna()]
+
+
+# Создаем отдельный датасет из столбца "Target".
+# Из датасета для обучения исключаем столбцы '№','Target','Role'. Так как они не имеют значения при обучении
+
+# In[5]:
+
+
+target = dataset_third[['Target']]
+train = dataset_third.drop(['№','Target','Role'], axis=1)
+
+
+# Для удобства смотрим названия столбцов датасета после удаления лишних столбцов
+
+# In[6]:
+
+
+train.columns
+
+
+# С помощью LabelEncoder мы строковые значения преобразуем в числовые.
+
+# In[12]:
+
+
+le = LabelEncoder()
+
+
+# In[13]:
+
+
+le.fit(train.Пол)
+train.Пол = le.transform(train.Пол)
+
+le.fit(train.Образование)
+train.Образование = le.transform(train.Образование)
+
+le.fit(train[train.columns[4]])
+train[train.columns[4]] = le.transform(train[train.columns[4]])
+
+
+# Данные для обучения делим еще на train и test (в отношении 90 на 10). Это необходимо для наблюдения успешности обучения модели.
+
+# In[14]:
+
+
+TRNtrain, TRNtest, TARtrain, TARtest = train_test_split(train, target, test_size = 0.1, random_state=0)
+
+
+# Выбираем модели для обучения и прописываем их параметры. Были бвыраны модели: RandomForestClassifier, GradientBoostingClassifier, ExtraTreesClassifier.
+
+# In[15]:
+
+
+models = []
+models.append(RandomForestClassifier(max_depth=8, random_state = 0, bootstrap=False, n_estimators = 500))
+models.append(GradientBoostingClassifier(subsample=0.5, criterion = "friedman_mse", 
+                                         random_state = 0, n_estimators = 10))
+models.append(ExtraTreesClassifier(random_state=1, max_features=4, n_jobs=1, 
+                                   min_weight_fraction_leaf=0.1, criterion='entropy', n_estimators = 100))
+
+
+# Перебираем параметр n_estimators, который присутствует в 3х моделях. Далее модель обучается и после обучения выводится название модели и прогнозируемый результат. Лучшие значения n_estimators вставляю в параметры модели. Также далее идет отрисовка обучения модели, где можно увидеть наилучшую модель.
+for model in models:
+    parameters = {"n_estimators":[10, 100, 500]}
+    
+    clf = GridSearchCV(model, parameters, cv = 5, scoring='roc_auc', n_jobs=-1) 
+    clf.fit(TRNtrain, TARtrain)
+    
+    md = str(model)
+    md = md[:md.find('(')]
+    
+    print(clf.score(TRNtrain, TARtrain))
+    print(clf.best_params_)
+    print(md)
+    result = clf.predict_proba(TRNtest)[:, 1]
+    roc_auc = roc_auc_score(TARtest, result)
+    print("Predict score :",roc_auc)
+# In[16]:
+
+
+plt.figure(figsize=(10, 10)) 
+for model in models:
+    model.fit(TRNtrain, TARtrain)
+    pred_scr = model.predict_proba(TRNtest)[:, 1]
+    fpr, tpr, thresholds = roc_curve(TARtest, pred_scr)
+    roc_auc = roc_auc_score(TARtest, pred_scr)
+    md = str(model)
+    md = md[:md.find('(')]
+    plt.plot(fpr, tpr, label='ROC fold %s (auc = %0.2f)' % (md, roc_auc))
+
+plt.plot([0, 1], [0, 1], '--', color=(0.6, 0.6, 0.6))
+plt.xlim([0, 1])
+plt.ylim([0, 1])
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('Receiver operating characteristic example')
+plt.legend(loc="lower right")
+plt.show()
+
+
+# Читаем файл с данными для теста.
+
+# In[17]:
+
+
+df_final = read_excel('var_2.xlsx')
+
+
+# Выводим первые 3 значения.
+
+# In[18]:
+
+
+df_final.head(3)
+
+
+# Также исключаем столбцы, которые не нужны для обучения
+
+# In[19]:
+
+
+test = df_final.drop(['№','Target','Role'], axis=1)
+
+
+# Для удобства выводим названия столбцов.
+
+# In[20]:
+
+
+test.columns
+
+
+# Также трансформируем строковые значения в числовые.
+
+# In[21]:
+
+
+le.fit(test.Пол)
+test.Пол = le.transform(test.Пол)
+
+le.fit(test.Образование)
+test.Образование = le.transform(test.Образование)
+
+le.fit(test[test.columns[4]])
+test[test.columns[4]] = le.transform(test[test.columns[4]])
+
+
+# Смотрим данные после трансформации.
+
+# In[22]:
+
+
+test.head(3)
+
+
+# Так как лучший результат показала модель ExtraTreesClassifier используем ее для предсказания.
+
+# In[23]:
+
+
+models[2].predict(test)
+
+
+# In[24]:
+
+
+test['target'] = models[2].predict(test)
+
+
+# Выводим таблицу со значениями "Target"
+
+# In[31]:
+
+
+test
+
